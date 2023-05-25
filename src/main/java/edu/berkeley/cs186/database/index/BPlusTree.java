@@ -16,6 +16,8 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.*;
 
+import javax.xml.crypto.Data;
+
 /**
  * A persistent B+ tree.
  *
@@ -145,9 +147,7 @@ public class BPlusTree {
         // TODO(proj4_integration): Update the following line
         LockUtil.ensureSufficientLockHeld(lockContext, LockType.NL);
 
-        // TODO(proj2): implement
-
-        return Optional.empty();
+        return root.get(key).getKey(key);
     }
 
     /**
@@ -201,9 +201,7 @@ public class BPlusTree {
         // TODO(proj4_integration): Update the following line
         LockUtil.ensureSufficientLockHeld(lockContext, LockType.NL);
 
-        // TODO(proj2): Return a BPlusTreeIterator.
-
-        return Collections.emptyIterator();
+        return new BPlusTreeIterator();
     }
 
     /**
@@ -234,9 +232,7 @@ public class BPlusTree {
         // TODO(proj4_integration): Update the following line
         LockUtil.ensureSufficientLockHeld(lockContext, LockType.NL);
 
-        // TODO(proj2): Return a BPlusTreeIterator.
-
-        return Collections.emptyIterator();
+        return new BPlusTreeIterator(key);
     }
 
     /**
@@ -253,12 +249,19 @@ public class BPlusTree {
         // TODO(proj4_integration): Update the following line
         LockUtil.ensureSufficientLockHeld(lockContext, LockType.NL);
 
-        // TODO(proj2): implement
         // Note: You should NOT update the root variable directly.
         // Use the provided updateRoot() helper method to change
         // the tree's root if the old root splits.
+        Optional<Pair<DataBox, Long>> pdl = root.put(key, rid);
+        if (!pdl.isPresent()) return;
 
-        return;
+        List<DataBox> newRootKeys = new ArrayList<>();
+        List<Long> newRootChildren = new ArrayList<>();
+        newRootKeys.add(pdl.get().getFirst());
+        newRootChildren.add(root.getPage().getPageNum());
+        newRootChildren.add(pdl.get().getSecond());
+        
+        updateRoot(new InnerNode(metadata, bufferManager, newRootKeys, newRootChildren, lockContext));
     }
 
     /**
@@ -284,12 +287,19 @@ public class BPlusTree {
         // TODO(proj4_integration): Update the following line
         LockUtil.ensureSufficientLockHeld(lockContext, LockType.NL);
 
-        // TODO(proj2): implement
         // Note: You should NOT update the root variable directly.
         // Use the provided updateRoot() helper method to change
         // the tree's root if the old root splits.
-
-        return;
+        while (data.hasNext()) {
+            Optional<Pair<DataBox, Long>> pdl = root.bulkLoad(data, fillFactor);
+            if (!pdl.isPresent()) continue;
+            List<DataBox> newKeys = new ArrayList<>();
+            List<Long> newChildren = new ArrayList<>();
+            newKeys.add(pdl.get().getFirst());
+            newChildren.add(root.getPage().getPageNum());
+            newChildren.add(pdl.get().getSecond());
+            updateRoot(new InnerNode(metadata, bufferManager, newKeys, newChildren, lockContext));
+        }
     }
 
     /**
@@ -308,9 +318,7 @@ public class BPlusTree {
         // TODO(proj4_integration): Update the following line
         LockUtil.ensureSufficientLockHeld(lockContext, LockType.NL);
 
-        // TODO(proj2): implement
-
-        return;
+        root.remove(key);
     }
 
     // Helpers /////////////////////////////////////////////////////////////////
@@ -422,20 +430,36 @@ public class BPlusTree {
 
     // Iterator ////////////////////////////////////////////////////////////////
     private class BPlusTreeIterator implements Iterator<RecordId> {
-        // TODO(proj2): Add whatever fields and constructors you want here.
+        // the LeafNode currently iterated
+        private Optional<LeafNode> currLeafNode;
+        // the iterator over currLeafNode
+        private Iterator<RecordId> currIter;
+
+        public BPlusTreeIterator() {
+            this.currLeafNode = Optional.of(root.getLeftmostLeaf());
+            this.currIter = currLeafNode.get().scanAll();
+        }
+
+        public BPlusTreeIterator(DataBox key) {
+            this.currLeafNode = Optional.of(root.get(key));
+            this.currIter = currLeafNode.get().scanGreaterEqual(key);
+        }
 
         @Override
         public boolean hasNext() {
-            // TODO(proj2): implement
 
-            return false;
+            return currLeafNode.isPresent();
         }
 
         @Override
         public RecordId next() {
-            // TODO(proj2): implement
 
-            throw new NoSuchElementException();
+            RecordId rid = currIter.next();
+            if (!currIter.hasNext()) {
+                currLeafNode = currLeafNode.get().getRightSibling();
+                if (currLeafNode.isPresent()) currIter = currLeafNode.get().scanAll();
+            }
+            return rid;
         }
     }
 }

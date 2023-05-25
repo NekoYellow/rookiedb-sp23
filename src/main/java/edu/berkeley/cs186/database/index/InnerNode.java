@@ -80,43 +80,102 @@ class InnerNode extends BPlusNode {
     // See BPlusNode.get.
     @Override
     public LeafNode get(DataBox key) {
-        // TODO(proj2): implement
 
-        return null;
+        int idx = 0;
+        for (DataBox k : keys) {
+            if (key.compareTo(k) < 0) break;
+            ++idx;
+        }
+        return getChild(idx).get(key);
     }
 
     // See BPlusNode.getLeftmostLeaf.
     @Override
     public LeafNode getLeftmostLeaf() {
         assert(children.size() > 0);
-        // TODO(proj2): implement
 
-        return null;
+        return getChild(0).getLeftmostLeaf();
     }
 
     // See BPlusNode.put.
     @Override
     public Optional<Pair<DataBox, Long>> put(DataBox key, RecordId rid) {
-        // TODO(proj2): implement
 
-        return Optional.empty();
+        int idx = 0;
+        for (DataBox k : keys) {
+            if (key.compareTo(k) < 0) break;
+            ++idx;
+        }
+        Optional<Pair<DataBox, Long>> pdl = getChild(idx).put(key, rid);
+        if (!pdl.isPresent()) return Optional.empty();
+
+        idx = 0;
+        for (DataBox k : keys) {
+            if (pdl.get().getFirst().compareTo(k) < 0) break;
+            ++idx;
+        }
+        keys.add(idx, pdl.get().getFirst());
+        children.add(idx + 1, pdl.get().getSecond());
+
+        int d = metadata.getOrder();
+        if (keys.size() <= 2 * d) {
+            sync();
+            return Optional.empty();
+        }
+
+        List<DataBox> newKeys = new ArrayList<>();
+        List<Long> newChildren = new ArrayList<>();
+
+        for (int i = 0; i <= d; ++i) {
+            newKeys.add(keys.remove(d));
+            newChildren.add(children.remove(d+1));
+        }
+        DataBox splitKey = newKeys.remove(0);
+
+        InnerNode rightNode = new InnerNode(metadata, bufferManager, newKeys, newChildren, treeContext);
+        sync();
+        return Optional.of(new Pair<DataBox, Long>(splitKey, rightNode.getPage().getPageNum()));
+
     }
 
     // See BPlusNode.bulkLoad.
     @Override
     public Optional<Pair<DataBox, Long>> bulkLoad(Iterator<Pair<DataBox, RecordId>> data,
             float fillFactor) {
-        // TODO(proj2): implement
 
-        return Optional.empty();
+        int d = metadata.getOrder();
+        while (keys.size() <= 2 * d) {
+            Optional<Pair<DataBox, Long>> pdl = getChild(children.size() - 1).bulkLoad(data, fillFactor);
+            if (!pdl.isPresent()) break;
+            keys.add(pdl.get().getFirst());
+            children.add(pdl.get().getSecond());
+        }
+
+        if (keys.size() <= 2 * d) {
+            sync();
+            return Optional.empty();
+        }
+
+        List<DataBox> newKeys = new ArrayList<>();
+        List<Long> newChildren = new ArrayList<>();
+        
+        for (int i = 0; i <= d; i++) {
+            newKeys.add(keys.remove(d));
+            newChildren.add(children.remove(d+1));
+        }
+        DataBox splitKey = newKeys.remove(0);
+        
+        InnerNode rightNode = new InnerNode(metadata, bufferManager, newKeys, newChildren, treeContext);
+        sync();
+        return Optional.of(new Pair<DataBox, Long>(splitKey, rightNode.getPage().getPageNum()));
     }
 
     // See BPlusNode.remove.
     @Override
     public void remove(DataBox key) {
-        // TODO(proj2): implement
 
-        return;
+        BPlusNode lNode = get(key);
+        lNode.remove(key);
     }
 
     // Helpers /////////////////////////////////////////////////////////////////
