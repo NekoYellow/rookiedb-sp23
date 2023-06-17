@@ -135,12 +135,50 @@ public class SortMergeOperator extends JoinOperator {
         }
 
         /**
+         * Find the next matching (leftRecord, rightRecord) pair.
+         * @return if a match is found
+         */
+        private boolean findNextMatch() {
+            if (leftRecord == null || rightRecord == null) return false;
+            while (compare(leftRecord, rightRecord) != 0) {
+                if (compare(leftRecord, rightRecord) < 0) {
+                    if (!leftIterator.hasNext()) return false;
+                    this.leftRecord = leftIterator.next();
+                } else {
+                    if (!rightIterator.hasNext()) return false;
+                    this.rightRecord = rightIterator.next();
+                }
+            }
+            assert compare(leftRecord, rightRecord) == 0;
+            this.marked = true;
+            return true;
+        }
+
+        /**
          * Returns the next record that should be yielded from this join,
          * or null if there are no more records to join.
          */
         private Record fetchNextRecord() {
-            // TODO(proj3_part1): implement
-            return null;
+            while (true) {
+                // currently not in a match
+                if (!marked) {
+                    if (!findNextMatch()) return null;
+                    rightIterator.markPrev();
+                }
+                // here mark = true
+                // match ends: left iterator goes down and right iterator backtracks
+                if (rightRecord == null || compare(leftRecord, rightRecord) != 0) {
+                    this.leftRecord = leftIterator.hasNext() ? leftIterator.next() : null;
+                    rightIterator.reset();
+                    this.rightRecord = rightIterator.next();
+                    this.marked = false;
+                    continue;
+                }
+                // get a match
+                Record record = leftRecord.concat(rightRecord);
+                this.rightRecord = rightIterator.hasNext() ? rightIterator.next() : null;
+                return record;
+            }
         }
 
         @Override

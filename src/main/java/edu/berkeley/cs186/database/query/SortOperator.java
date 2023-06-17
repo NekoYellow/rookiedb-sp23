@@ -86,8 +86,12 @@ public class SortOperator extends QueryOperator {
      * iterator
      */
     public Run sortRun(Iterator<Record> records) {
-        // TODO(proj3_part1): implement
-        return null;
+        List<Record> a = new ArrayList<>();
+        while (records.hasNext()) {
+            a.add(records.next());
+        }
+        a.sort(new RecordComparator());
+        return makeRun(a);
     }
 
     /**
@@ -107,8 +111,27 @@ public class SortOperator extends QueryOperator {
      */
     public Run mergeSortedRuns(List<Run> runs) {
         assert (runs.size() <= this.numBuffers - 1);
-        // TODO(proj3_part1): implement
-        return null;
+
+        List<Iterator<Record>> iterators = new ArrayList<>();
+        PriorityQueue<Pair<Record, Integer>> pq = new PriorityQueue<>(new RecordPairComparator());
+        for (int i = 0; i < runs.size(); i++) {
+            iterators.add(runs.get(i).iterator());
+            if (iterators.get(i).hasNext()) {
+                pq.add(new Pair<Record, Integer>(iterators.get(i).next(), i));
+            }
+        }
+
+        Run run = makeRun();
+        while (!pq.isEmpty()) {
+            Pair<Record, Integer> p = pq.poll();
+            run.add(p.getFirst());
+            int i = p.getSecond();
+            if (iterators.get(i).hasNext()) {
+                pq.add(new Pair<Record, Integer>(iterators.get(i).next(), i));
+            }
+        }
+
+        return run;
     }
 
     /**
@@ -132,8 +155,12 @@ public class SortOperator extends QueryOperator {
      * @return a list of sorted runs obtained by merging the input runs
      */
     public List<Run> mergePass(List<Run> runs) {
-        // TODO(proj3_part1): implement
-        return Collections.emptyList();
+        int B = numBuffers;
+        List<Run> mergedRuns = new ArrayList<>();
+        for (int i = 0; i < runs.size(); i += B-1) {
+            mergedRuns.add(mergeSortedRuns(runs.subList(i, Math.min(i+B-1, runs.size()))));
+        }
+        return mergedRuns;
     }
 
     /**
@@ -148,8 +175,14 @@ public class SortOperator extends QueryOperator {
         // Iterator over the records of the relation we want to sort
         Iterator<Record> sourceIterator = getSource().iterator();
 
-        // TODO(proj3_part1): implement
-        return makeRun(); // TODO(proj3_part1): replace this!
+        List<Run> runs = new ArrayList<>();
+        while (sourceIterator.hasNext()) {
+            runs.add(sortRun(getBlockIterator(sourceIterator, getSchema(), numBuffers)));
+        }
+        while (runs.size() > 1) {
+            runs = mergePass(runs);
+        }
+        return runs.get(0);
     }
 
     /**

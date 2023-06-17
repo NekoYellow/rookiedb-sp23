@@ -71,6 +71,7 @@ public class BNLJOperator extends JoinOperator {
             this.rightSourceIterator.markNext();
             this.fetchNextRightPage();
 
+            this.leftRecord = leftBlockIterator.hasNext() ? leftBlockIterator.next() : null;
             this.nextRecord = null;
         }
 
@@ -87,7 +88,9 @@ public class BNLJOperator extends JoinOperator {
          * Make sure you pass in the correct schema to this method.
          */
         private void fetchNextLeftBlock() {
-            // TODO(proj3_part1): implement
+            this.leftBlockIterator = getBlockIterator(leftSourceIterator, getLeftSource().getSchema(),
+                                                      numBuffers-2);
+            this.leftBlockIterator.markNext();
         }
 
         /**
@@ -102,7 +105,37 @@ public class BNLJOperator extends JoinOperator {
          * Make sure you pass in the correct schema to this method.
          */
         private void fetchNextRightPage() {
-            // TODO(proj3_part1): implement
+            this.rightPageIterator = getBlockIterator(rightSourceIterator, getRightSource().getSchema(),
+                                                      1);
+            this.rightPageIterator.markNext();
+        }
+
+        /**
+         * Assign the next left record to leftRecord and update the status of the
+         * right page iterator.
+         * Called when the right page iterator doesn't have a value to yield.
+         * 
+         * There could be 3 cases:
+         * 1. The left block iterator has a value to yield
+         * 2. Neither the right page nor left block iterators have values to yield,
+         * but there's more right pages
+         * 3. Neither right page nor left block iterators have values nor are there
+         * more right pages, but there are still left blocks
+         */
+        private void getLeftRecord() {
+            if (leftBlockIterator.hasNext()) { // case 1
+                this.leftRecord = leftBlockIterator.next();
+                rightPageIterator.reset();
+                return;
+            }
+            if (rightSourceIterator.hasNext()) { // case 2
+                leftBlockIterator.reset();
+            } else { // case 3
+                fetchNextLeftBlock();
+                rightSourceIterator.reset();
+            }
+            fetchNextRightPage();
+            this.leftRecord = leftBlockIterator.hasNext() ? leftBlockIterator.next() : null;
         }
 
         /**
@@ -114,9 +147,21 @@ public class BNLJOperator extends JoinOperator {
          * of JoinOperator).
          */
         private Record fetchNextRecord() {
-            // TODO(proj3_part1): implement
-            return null;
+            while (true) { // loop until find a pair of fit records or finish
+                if (leftRecord == null) {
+                    return null; // no more records
+                }
+                if (rightPageIterator.hasNext()) {
+                    Record rightRecord = rightPageIterator.next();
+                    if (compare(leftRecord, rightRecord) == 0) {
+                        return leftRecord.concat(rightRecord);
+                    }
+                } else {
+                    getLeftRecord();
+                }
+            }
         }
+
 
         /**
          * @return true if this iterator has another record to yield, otherwise
