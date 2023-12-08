@@ -2,6 +2,10 @@ package edu.berkeley.cs186.database.concurrency;
 
 import edu.berkeley.cs186.database.TransactionContext;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 /**
  * LockUtil is a declarative layer which simplifies multigranularity lock
  * acquisition for the user (you, in the last task of Part 2). Generally
@@ -22,8 +26,8 @@ public class LockUtil {
      * - The current lock type is IX and the requested lock is S
      * - The current lock type is an intent lock
      * - None of the above: In this case, consider what values the explicit
-     *   lock type can be, and think about how ancestor looks will need to be
-     *   acquired or changed.
+     * lock type can be, and think about how ancestor looks will need to be
+     * acquired or changed.
      *
      * You may find it useful to create a helper method that ensures you have
      * the appropriate locks on all ancestors.
@@ -34,16 +38,58 @@ public class LockUtil {
 
         // Do nothing if the transaction or lockContext is null
         TransactionContext transaction = TransactionContext.getTransaction();
-        if (transaction == null || lockContext == null) return;
+        if (transaction == null || lockContext == null)
+            return;
 
-        // You may find these variables useful
         LockContext parentContext = lockContext.parentContext();
         LockType effectiveLockType = lockContext.getEffectiveLockType(transaction);
         LockType explicitLockType = lockContext.getExplicitLockType(transaction);
 
-        // TODO(proj4_part2): implement
-        return;
+        // * - The current lock type can effectively substitute the requested type
+        if (LockType.substitutable(effectiveLockType, requestType)) {
+            return;
+        }
+        // * - The current lock type is IX and the requested lock is S
+        else if (explicitLockType.equals(LockType.IX) && requestType.equals(LockType.S)) {
+            lockContext.promote(transaction, LockType.SIX);
+        }
+        // * - The current lock type is an intent lock
+        else if (explicitLockType.isIntent()) {
+            lockContext.escalate(transaction);
+            if (lockContext.getEffectiveLockType(transaction) != requestType) {
+                lockContext.promote(transaction, requestType);
+            }
+        }
+        // * - None of the above: In this case, consider what values the explicit
+        // * lock type can be, and think about how ancestor looks will need to be
+        // * acquired or changed.
+        else {
+            // ancestor
+            List<LockContext> ancestors = new ArrayList<>();
+            LockType aType;
+            while (parentContext != null) {
+                ancestors.add(parentContext);
+                parentContext = parentContext.parentContext();
+            }
+            if (requestType == LockType.S) {
+                aType = LockType.IS;
+            } else {
+                aType = LockType.IX;
+            }
+            Collections.reverse(ancestors);
+            for (LockContext lc : ancestors) {
+                if (lc.getExplicitLockType(transaction).equals(LockType.NL)) {
+                    lc.acquire(transaction, aType);
+                } else if (!LockType.substitutable(lc.getExplicitLockType(transaction), aType)) {
+                    lc.promote(transaction, aType);
+                }
+            }
+            if (explicitLockType.equals(LockType.NL)) {
+                lockContext.acquire(transaction, requestType);
+            } else {
+                lockContext.promote(transaction, requestType);
+            }
+        }
     }
 
-    // TODO(proj4_part2) add any helper methods you want
 }
